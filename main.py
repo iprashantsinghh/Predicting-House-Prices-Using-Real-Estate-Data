@@ -1,216 +1,335 @@
 import pandas as pd
-import numpy as np
+
+file_path = "data/Case Study 2 Data (1).xlsx"
+
+users = pd.read_excel(file_path, sheet_name="User Data")
+properties = pd.read_excel(file_path, sheet_name="Property Data")
+
+
+
+print("\nUSER DATA")
+print(users.head())
+
+
+#pre processing
+print("\nPROPERTY DATA")
+print(properties.head())
+print("\nUSER COLUMNS")
+print(users.columns)
+
+print("\nPROPERTY COLUMNS")
+print(properties.columns)
+print("\nMISSING VALUES IN USER DATA")
+print(users.isnull().sum())
+
+print("\nMISSING VALUES IN PROPERTY DATA")
+print(properties.isnull().sum())
+
+
+
+def clean_price(value):
+
+    value = str(value)
+
+    value = value.replace("$", "")
+    value = value.replace(",", "")
+    value = value.replace("k", "000")
+
+    return float(value)
+
+users["Budget"] = users["Budget"].apply(clean_price)
+
+properties["Price"] = properties["Price"].apply(clean_price)
+
+users["Qualitative Description"] = users["Qualitative Description"].str.lower()
+
+properties["Qualitative Description"] = properties["Qualitative Description"].str.lower()
+
+print("\nCLEANED USER DATA")
+print(users.head())
+
+print("\nCLEANED PROPERTY DATA")
+print(properties.head())
+def text_match_score(user_text, property_text):
+
+    # Convert into word sets
+    user_words = set(user_text.split())
+
+    property_words = set(property_text.split())
+
+    # Common words
+    common_words = user_words.intersection(property_words)
+
+    # Score
+    score = len(common_words) / len(user_words)
+
+    return round(score * 100, 2)
+
+score = text_match_score(
+    users.iloc[0]["Qualitative Description"],
+    properties.iloc[0]["Qualitative Description"]
+)
+
+print("\nTEXT MATCH SCORE")
+print(score)
+
+def feature_match_score(user, property_):
+
+    score = 0
+
+    # Budget Match
+    if property_["Price"] <= user["Budget"]:
+        score += 1
+
+    # Bedroom Match
+    if property_["Bedrooms"] == user["Bedrooms"]:
+        score += 1
+
+    # Bathroom Match
+    if property_["Bathrooms"] == user["Bathrooms"]:
+        score += 1
+
+    # Final Feature Score
+    final_score = (score / 3) * 100
+
+    return round(final_score, 2)
+feature_score = feature_match_score(
+    users.iloc[0],
+    properties.iloc[0]
+)
+
+print("\nFEATURE MATCH SCORE")
+print(feature_score)
+
+# FINAL MATCH SCORE
+def final_match_score(text_score, feature_score):
+
+    final_score = (text_score + feature_score) / 2
+
+    return round(final_score, 2)
+final_score = final_match_score(score, feature_score)
+
+print("\nFINAL MATCH SCORE")
+print(final_score)
+results = []
+
+for i, user in users.iterrows():
+
+    for j, property_ in properties.iterrows():
+
+        # Text Score
+        text_score = text_match_score(
+            user["Qualitative Description"],
+            property_["Qualitative Description"]
+        )
+
+        # Feature Score
+        feature_score = feature_match_score(
+            user,
+            property_
+        )
+
+        # Final Score
+        final_score = final_match_score(
+            text_score,
+            feature_score
+        )
+
+        # Store Results
+        results.append({
+            "User ID": user["User ID"],
+            "Property ID": property_["Property ID"],
+            "Text Score": text_score,
+            "Feature Score": feature_score,
+            "Final Match Score": final_score
+        })
+
+        results_df = pd.DataFrame(results)
+
+# Sort by highest score
+results_df = results_df.sort_values(
+    by="Final Match Score",
+    ascending=False
+)
+print("\nTOP MATCHES")
+print(results_df.head(10))
+
+results_df.to_csv("match_results.csv", index=False)
+
+print("\nResults saved successfully!")
+
 import matplotlib.pyplot as plt
+
+# Top 10 matches
+top_10 = results_df.head(10)
+
+# Labels
+labels = []
+
+for i in range(len(top_10)):
+    labels.append(
+        f"U{top_10.iloc[i]['User ID']} → P{top_10.iloc[i]['Property ID']}"
+    )
+
+# Colors
+colors = [
+    "red",
+    "blue",
+    "green",
+    "orange",
+    "purple",
+    "cyan",
+    "magenta",
+    "gold",
+    "pink",
+    "brown"
+]
+
+# Figure
+plt.figure(figsize=(12, 6))
+
+# Horizontal bars
+bars = plt.barh(
+    labels,
+    top_10["Final Match Score"],
+    color=colors
+)
+
+# Labels
+plt.xlabel("Match Score", fontsize=12)
+plt.ylabel("Recommendations", fontsize=12)
+
+plt.title(
+    "Top Property Recommendations",
+    fontsize=16,
+    fontweight='bold'
+)
+
+# Score text
+for i, score in enumerate(top_10["Final Match Score"]):
+    plt.text(score + 1, i, f"{score}")
+
+# Best score on top
+plt.gca().invert_yaxis()
+
+# Grid
+plt.grid(axis='x', linestyle='--', alpha=0.5)
+
+# Save chart
+plt.savefig("top_property_recommendations.png")
+
+# Show
+plt.show()
 import seaborn as sns
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from xgboost import XGBRegressor
-
-import joblib
-
-df = pd.read_excel("data/Case Study 1 Data (1).xlsx")
-# Handle missing values
-
-for col in df.columns:
-
-    if df[col].dtype == "object":
-
-        df[col].fillna(df[col].mode()[0], inplace=True)
-
-    else:
-
-        try:
-            df[col] = pd.to_numeric(df[col])
-
-            df[col].fillna(df[col].median(), inplace=True)
-
-        except:
-            pass
-print(df.head())
-print(df.info())
-
-print(df.isnull().sum())
-df.drop("Property ID", axis=1, inplace=True)
-df["Date Sold"] = pd.to_datetime(df["Date Sold"])
-
-df["Sale_Year"] = df["Date Sold"].dt.year
-
-df["Sale_Month"] = df["Date Sold"].dt.month
-
-df.drop("Date Sold", axis=1, inplace=True)
-le = LabelEncoder()
-
-categorical_cols = df.select_dtypes(include='object').columns
-
-for col in categorical_cols:
-    df[col] = le.fit_transform(df[col])
-
-print(df.head())
-X = df.drop("Price", axis=1)
-
-y = df["Price"]
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42
-)
-X_train = X_train.fillna(0)
-
-X_test = X_test.fillna(0)
-
-y_train = y_train.fillna(0)
-
-y_test = y_test.fillna(0)
-lr = LinearRegression()
-
-
-lr.fit(X_train, y_train)
-
-lr_pred = lr.predict(X_test)
-print("LINEAR REGRESSION RESULTS")
-
-print("MAE:", mean_absolute_error(y_test, lr_pred))
-
-print("RMSE:", np.sqrt(mean_squared_error(y_test, lr_pred)))
-
-print("R2 Score:", r2_score(y_test, lr_pred))
-
-rf = RandomForestRegressor(
-    n_estimators=300,
-    random_state=42,
-    n_jobs=-1
+# Pivot table
+heatmap_data = results_df.pivot(
+    index="User ID",
+    columns="Property ID",
+    values="Final Match Score"
 )
 
-rf.fit(X_train, y_train)
+# Figure
+plt.figure(figsize=(12, 8))
 
-rf_pred = rf.predict(X_test)
-print("RANDOM FOREST RESULTS")
-
-print("MAE:", mean_absolute_error(y_test, rf_pred))
-
-print("RMSE:", np.sqrt(mean_squared_error(y_test, rf_pred)))
-
-print("R2 Score:", r2_score(y_test, rf_pred))
-xgb = XGBRegressor(
-    n_estimators=300,
-    learning_rate=0.05,
-    max_depth=6,
-    random_state=42,
-    nthread=-1
-)
-# Final NaN check
-
-print(df.isnull().sum())
-
-print(df.dtypes)
-xgb.fit(X_train, y_train)
-
-xgb_pred = xgb.predict(X_test)
-# Remove remaining NaN values
-
-X_train = X_train.fillna(0)
-
-X_test = X_test.fillna(0)
-print("XGBOOST RESULTS")
-
-
-print("MAE:", mean_absolute_error(y_test, xgb_pred))
-
-print("RMSE:", np.sqrt(mean_squared_error(y_test, xgb_pred)))
-
-print("R2 Score:", r2_score(y_test, xgb_pred))
-joblib.dump(rf, "D:/case1/model/best_model.pkl")
-rf = RandomForestRegressor(
-    n_estimators=500,
-    random_state=42,
-    n_jobs=-1
+# Heatmap
+sns.heatmap(
+    heatmap_data,
+    annot=True,
+    cmap="YlGnBu",
+    linewidths=0.5
 )
 
-rf.fit(X_train, y_train)
-
-rf_pred = rf.predict(X_test)
-
-print("RANDOM FOREST RESULTS")
-
-print("MAE:", mean_absolute_error(y_test, rf_pred))
-
-print("RMSE:", np.sqrt(mean_squared_error(y_test, rf_pred)))
-
-print("R2 Score:", r2_score(y_test, rf_pred))
-
-xgb = XGBRegressor(
-    n_estimators=500,
-    learning_rate=0.05,
-    max_depth=8,
-    random_state=42,
-    nthread=-1
+# Title
+plt.title(
+    "User vs Property Match Score Heatmap",
+    fontsize=16,
+    fontweight='bold'
 )
 
-xgb.fit(X_train, y_train)
+# Save
+plt.savefig("match_heatmap.png")
 
-xgb_pred = xgb.predict(X_test)
-
-print("XGBOOST RESULTS")
-
-print("MAE:", mean_absolute_error(y_test, xgb_pred))
-
-print("RMSE:", np.sqrt(mean_squared_error(y_test, xgb_pred)))
-
-print("R2 Score:", r2_score(y_test, xgb_pred))
+# Show
+plt.show()
+import streamlit as st
+import pandas as pd
 
 # =========================
-# VISUALIZATIONS
+# PAGE CONFIG
 # =========================
 
-# Price Distribution
-plt.figure(figsize=(8,5))
+st.set_page_config(
+    page_title="Property Matching System",
+    layout="wide"
+)
 
-sns.histplot(df["Price"], bins=30, kde=True)
+# =========================
+# LOAD DATA
+# =========================
 
-plt.title("Price Distribution")
+results_df = pd.read_csv("match_results.csv")
 
-plt.xlabel("Price")
+# =========================
+# TITLE
+# =========================
 
-plt.ylabel("Count")
+st.title("🏠 Property Matching System")
 
-plt.show()
+st.markdown("### AI-Based Property Recommendation Engine")
 
+# =========================
+# USER IDs
+# =========================
 
-# Size vs Price
-plt.figure(figsize=(8,5))
+user_ids = results_df["User ID"].unique()
 
-sns.scatterplot(x=df["Size"], y=df["Price"])
+selected_user = st.selectbox(
+    "Select User ID",
+    user_ids
+)
 
-plt.title("Property Size vs Price")
+# =========================
+# FILTER DATA
+# =========================
 
-plt.xlabel("Size")
+filtered = results_df[
+    results_df["User ID"] == selected_user
+]
 
-plt.ylabel("Price")
+filtered = filtered.sort_values(
+    by="Final Match Score",
+    ascending=False
+)
 
-plt.show()
+# =========================
+# SHOW TABLE
+# =========================
 
+st.subheader("📋 Recommended Properties")
 
-# Bedrooms vs Price
-plt.figure(figsize=(8,5))
+st.dataframe(
+    filtered,
+    use_container_width=True
+)
 
-sns.boxplot(x=df["Bedrooms"], y=df["Price"])
+# =========================
+# BEST MATCH
+# =========================
 
-plt.title("Bedrooms vs Price")
+best_property = filtered.iloc[0]
 
-plt.show()
+st.success(
+    f"🏆 Best Match → Property {best_property['Property ID']} "
+    f"with score {best_property['Final Match Score']}"
+)
 
+# =========================
+# BAR CHART
+# =========================
 
-# Correlation Heatmap
-plt.figure(figsize=(10,8))
+st.subheader("📊 Match Score Chart")
 
-sns.heatmap(df.corr(), annot=True, cmap="coolwarm")
+chart_data = filtered.set_index("Property ID")
 
-plt.title("Correlation Heatmap")
-
-plt.show()
+st.bar_chart(chart_data["Final Match Score"])
